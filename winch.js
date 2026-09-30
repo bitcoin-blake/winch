@@ -1,0 +1,85 @@
+// Winch: solo mining in a tab. The node in the tab (browser/tabnode.js, pinned) builds the block from its own chain tip and
+// its own validated mempool, paying this tab's script; hashing workers on the page roll the nonce over the 80-byte work in
+// testnet's twenty-minute window (the lowest difficulty); a found block is published as a kind 23405 event for a node that
+// follows it to submit, and the tab sees the result when its own chain tip moves. Nothing here trusts anyone's word.
+const $ = (id) => document.getElementById(id);
+const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@c6cbed10adac743a9e6721dbf0c193d17ae68731';
+const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@v0.0.27';
+const CORE = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-core.mjs', WASM = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-mine.wasm';
+const CHAIN = 'btc:testnet4-blake2b', BLOCK_KIND = 23405, MIN_BITS = '1d00ffff', WINDOW = 1200;
+const RELAYS = ['wss://relay.primal.net', 'wss://nostr.oxtr.dev', 'wss://nos.lol', 'wss://nostr.mom'];
+const { createTabNode, mib, n } = await import(`${NODE}/browser/tabnode.js`);
+const LS = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const q = new URLSearchParams(location.search);
+const SNAP_URL = q.get('snapshot') ?? LS.get('winch:snapshot') ?? LS.get('reef:snapshot') ?? 'https://melvin.me/public/txbt4/utxo-knots-150307.dat';
+const BLOCKS_URL = q.get('blocks') ?? LS.get('winch:blocks') ?? LS.get('reef:blocks') ?? 'https://melvin.me/public/txbt4/txbt4-blocks';
+const OPT = (() => { const d = { workers: Math.max(1, (navigator.hardwareConcurrency || 4) - 1), wasm: true, always: false, reefKey: true, torrent: false, auto: false }; try { return { ...d, ...JSON.parse(LS.get('winch:options') ?? '{}') }; } catch { return d; } })();
+const saveOptions = () => LS.set('winch:options', JSON.stringify(OPT));
+const fmtHr = (h) => h >= 1e9 ? `${(h / 1e9).toFixed(2)} GH/s` : h >= 1e6 ? `${(h / 1e6).toFixed(1)} MH/s` : h >= 1e3 ? `${(h / 1e3).toFixed(0)} kH/s` : `${h.toFixed(0)} H/s`;
+const fmtBtc = (sats) => (sats / 1e8).toFixed(8) + ' tBTC';
+const fmtT = (t) => t ? new Date(t * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '…';
+const now = () => Math.floor(Date.now() / 1000);
+
+const tn = createTabNode({ base: NODE, snapshotUrl: SNAP_URL, blocksUrl: BLOCKS_URL, torrent: OPT.torrent, seed: false }); const node = tn.node;
+const M = { key: null, pub: null, script: null, address: null, sign: null, publish: null, mining: false, work: null, workers: [], engine: '?', hashes: [], found: [], sleeping: false, wakeTimer: null, jobKey: 0, lastAsk: 0 };
+window.winch = { tn, node, M, OPT };
+
+// ---- log, status bar, pill
+function log(text, cls = '') { const el = $('log'); const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = `${new Date().toLocaleTimeString()} ${text}`; el.appendChild(d); while (el.children.length > 200) el.firstChild.remove(); el.scrollTop = el.scrollHeight; }
+tn.on('sync', ({ msg, pct, eta }) => { $('syncmsg').textContent = msg; $('synceta').textContent = eta || ''; if (pct == null) $('pb').hidden = true; else { $('pb').hidden = false; $('pbi').style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%'; } pill(); });
+tn.on('log', ({ text, level }) => { if (level === 'err' || /^(work|BLOCK|nonce|mempool: \d+ of)/.test(text)) log(text, level === 'err' ? 'e' : /^BLOCK/.test(text) ? 'g' : ''); });
+function pill() { $('pilldot').className = node.error ? 'bad' : node.synced ? 'ok' : 'sync'; $('pilltxt').textContent = node.error ? 'error' : node.synced ? `up to date · ${n(node.height)}` : node.phase === 'fetch' ? 'fetching the snapshot' : node.phase === 'hash' ? 'checking the snapshot' : node.phase === 'verify' ? 'verifying the snapshot' : node.phase === 'sync' ? `syncing · ${n(node.height ?? 0)}` : 'starting'; $('nodeinfo').textContent = node.st ? `${node.coins ? n(node.coins) + ' coins · ' : ''}mempool ${node.mempool ? node.mempool.count : '—'}` : ''; }
+
+// ---- the key and the script the block pays: Reef's, when this browser has one and the option says so, else this tab's own
+async function keys() {
+  const [{ makeSigner }, addr, relay, secp, hash] = await Promise.all([import(`${LIB}/schnorr.mjs`), import(`${LIB}/address.mjs`), import(`${LIB}/relay.mjs`), import(`${CDN}/codec/secp256k1.js`), import(`${CDN}/codec/hash.js`)]);
+  const signer = makeSigner({ hash, secp }); const reef = LS.get('reef:key'); let key = OPT.reefKey && /^[0-9a-f]{64}$/.test(reef ?? '') ? reef : LS.get('winch:key');
+  if (!/^[0-9a-f]{64}$/.test(key ?? '')) { key = signer.randomKey(); LS.set('winch:key', key); }
+  M.key = key; M.pub = signer.pubkeyOf(key); M.script = '5120' + M.pub; M.address = addr.scriptToAddress(M.script, 'tb'); M.fromReef = key === reef;
+  const ev = relay.makeEvents({ signer, hash }); M.sign = (o) => ev.signEvent(key, o); M.publish = (event) => relay.publish({ relays: RELAYS, event });
+  $('r-addr').textContent = M.address; $('r-key').textContent = M.fromReef ? "Reef's key in this browser (its wallet shows the reward)" : 'this tab\'s own key, kept in its storage'; $('r-note').textContent = M.fromReef ? 'Open Reef here to see a reward arrive; it becomes spendable once mature.' : 'No Reef wallet was found in this browser, so Winch made a key of its own. Its rewards are only reachable from a wallet that imports this key (Settings in Reef can take it).'; }
+
+// ---- the hashing workers: the datstr miner's loop, BLAKE2b in WebAssembly when it loads, rolling the nonce at bytes 32..35 of the work
+const workerSrc = () => `import { blake2b } from '${CDN}/codec/pow/blake2b.js'; import { mine, hexToBytes, loadWasmMiner } from '${CORE}';
+let current = null; const wasm = ${OPT.wasm} ? await loadWasmMiner('${WASM}') : null; self.postMessage({ type: 'engine', engine: wasm ? 'wasm' : 'js' });
+const hasher = wasm ?? mine.bind(null, blake2b);
+self.onmessage = (e) => { if (e.data.type === 'job') { current = { ...e.data, header: hexToBytes(e.data.header), target: hexToBytes(e.data.target), n: e.data.start }; run(); } else if (e.data.type === 'stop') current = null; };
+async function run() { const j = current; if (!j) return; while (current === j) { const r = hasher(j.header, j.target, j.n, j.step, wasm ? 1 << 20 : 1 << 14); j.n = (j.n + j.step * r.hashes) >>> 0; self.postMessage({ type: 'progress', hashes: r.hashes }); if (r.nonce !== null) { self.postMessage({ type: 'found', nonce: r.nonce, jobKey: j.jobKey }); j.n = (j.n + j.step) >>> 0; } await new Promise((res) => setTimeout(res, 0)); } }`;
+function startWorkers() { stopWorkers(); const url = URL.createObjectURL(new Blob([workerSrc()], { type: 'text/javascript' })); for (let i = 0; i < OPT.workers; i++) { const w = new Worker(url, { type: 'module' }); w.onmessage = onWorker; w.onerror = (e) => log('hashing worker: ' + (e.message || 'failed'), 'e'); M.workers.push(w); } $('workers').textContent = M.workers.length; }
+function stopWorkers() { for (const w of M.workers) w.terminate(); M.workers = []; $('workers').textContent = 0; }
+function onWorker(e) { const m = e.data; if (m.type === 'progress') { M.hashes.push([Date.now(), m.hashes]); } else if (m.type === 'found' && M.work && m.jobKey === M.work.jobKey) { log(`nonce ${m.nonce} meets the target on job ${m.jobKey}; checking the block`, 'b'); tn.post({ type: 'found', jobKey: m.jobKey, nonce: m.nonce }); } else if (m.type === 'engine') { if (M.engine !== m.engine) { M.engine = m.engine; log(m.engine === 'wasm' ? 'hashing in WebAssembly' : 'hashing in JavaScript (WebAssembly did not load)'); } } }
+setInterval(() => { const t = Date.now(); M.hashes = M.hashes.filter(([at]) => t - at < 10000); const sum = M.hashes.reduce((a, [, h]) => a + h, 0); const span = M.hashes.length ? Math.max(1000, t - M.hashes[0][0]) : 0; const rate = span ? sum / (span / 1000) : 0; $('rate').textContent = M.mining && !M.sleeping ? fmtHr(rate) : '—'; if (M.mining && !M.sleeping && rate > 0) $('mstate2').textContent = `at difficulty 1, about ${Math.round(4294967296 / rate)} s per block on average`; renderWindow(); }, 1000);
+
+// ---- work from the node worker: the block it built; mined now if the window is open, else the tab waits for it
+tn.on('mining', (m) => { if (m.solo) log(`mining solo as ${m.pub.slice(0, 12)}…; the block pays ${M.address.slice(0, 16)}…`); });
+tn.on('work', (m) => { if (!m.solo || !M.mining) return; M.work = m; $('b-height').textContent = n(m.height); $('b-txs').textContent = n(m.txs); $('b-fees').textContent = `${n(m.fees)} sat`; $('b-value').textContent = fmtBtc(m.value); $('b-bits').textContent = `${m.bits}${m.bits === MIN_BITS ? ' (the lowest: difficulty 1)' : ''}`; $('b-time').textContent = fmtT(m.time); $('b-prev').textContent = `${n(m.height - 1)} · ${m.prevHash.slice(0, 16)}… at ${fmtT(m.prevTime)}`;
+  const open = m.bits === MIN_BITS || OPT.always; if (open) dispatch(m); else sleep(m); });
+function dispatch(m) { M.sleeping = false; clearTimeout(M.wakeTimer); $('mstate').textContent = 'mining'; $('t-state').classList.add('on'); const header = Array.from(m.work, (b) => b.toString(16).padStart(2, '0')).join(''), target = Array.from(m.target, (b) => b.toString(16).padStart(2, '0')).join('');
+  M.workers.forEach((w, i) => w.postMessage({ type: 'job', header, target, start: i, step: M.workers.length, jobKey: m.jobKey })); log(`work: height ${n(m.height)}, ${m.txs} tx, ${n(m.fees)} sat fees, bits ${m.bits} (${m.why})`); }
+function sleep(m) { M.sleeping = true; $('mstate').textContent = 'waiting'; $('t-state').classList.remove('on'); $('rate').textContent = '—'; for (const w of M.workers) w.postMessage({ type: 'stop' }); const opensAt = (m.prevTime ?? now()) + WINDOW + 1; const wait = Math.max(3, opensAt - now() + 2); $('mstate2').textContent = `the window opens at ${fmtT(opensAt)}`; log(`waiting: bits ${m.bits}; the twenty-minute window opens at ${fmtT(opensAt)} (${Math.round(wait / 60)} min)`); clearTimeout(M.wakeTimer); M.wakeTimer = setTimeout(() => ask('the window opened'), Math.min(wait, 3600) * 1000); }
+function ask(why) { if (!M.mining) return; M.lastAsk = Date.now(); tn.post({ type: 'solo-work', why }); }
+function renderWindow() { const w = M.work; if (!w || !M.mining) { $('ring').style.setProperty('--p', '0%'); $('ringtxt').textContent = '—'; return; } const opensAt = (w.prevTime ?? now()) + WINDOW; const left = opensAt - now(); if (left > 0) { $('ring').style.setProperty('--p', `${Math.round((1 - left / WINDOW) * 100)}%`); $('ringtxt').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; $('w-t').textContent = `The twenty-minute window opens in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; } else { $('ring').style.setProperty('--p', '100%'); $('ringtxt').textContent = 'open'; $('w-t').textContent = `The window is open: ${Math.floor(-left / 60)}:${String((-left) % 60).padStart(2, '0')} since it opened`; if (M.sleeping && Date.now() - M.lastAsk > 15000) ask('the window is open'); } }
+tn.on('synced', (m) => { if (!M.enabled) { M.enabled = true; tn.followMempool({ relays: [...RELAYS, 'wss://relay.damus.io', 'wss://relay.nostr.band'] }); $('go').disabled = false; if (OPT.auto) start(); } pill(); for (const b of M.found) if (b.status === 'published' && node.height >= b.height) tn.post({ type: 'block', height: b.height, req: 'winch' }); });
+tn.on('block', (m) => { if (m.req !== 'winch') return; for (const b of M.found) if (b.height === m.height && b.status === 'published') { b.status = m.hash === b.hash ? 'in the chain' : 'another block won'; log(b.status === 'in the chain' ? `block ${n(b.height)} ${b.hash.slice(0, 16)}… is in the chain` : `block ${n(b.height)}: the chain took ${m.hash.slice(0, 16)}… instead`, b.status === 'in the chain' ? 'g' : 'e'); if (b.status === 'in the chain') { $('inchain').textContent = M.found.filter((x) => x.status === 'in the chain').length; notify('Block in the chain', `height ${n(b.height)}, ${fmtBtc(b.value)} to this tab`); } renderFound(); } });
+tn.on('mempool', () => { if (M.mining && !M.sleeping && Date.now() - M.lastAsk > 20000) ask('the mempool changed'); });
+// a found block: published for a node to submit; the chain tip tells the rest
+tn.on('block-found', async (m) => { const b = { height: m.height, hash: m.hash, value: m.value, txs: m.txs, at: now(), status: 'publishing', relays: 0 }; M.found.push(b); $('found').textContent = M.found.length; renderFound(); log(`BLOCK ${m.hash} at height ${n(m.height)} (${m.txs} tx, ${fmtBtc(m.value)}); publishing`, 'g'); notify('Block found', `height ${n(m.height)}, ${(m.hex.length / 2)} bytes; publishing`);
+  try { const event = M.sign({ kind: BLOCK_KIND, tags: [['chain', CHAIN], ['h', String(m.height)], ['hash', m.hash]], content: m.hex }); const r = await M.publish(event); const ok = Object.entries(r).filter(([, v]) => v === 'ok').map(([u]) => u); b.relays = ok.length; b.status = ok.length ? 'published' : 'no relay took it'; log(`published to ${ok.length}/${RELAYS.length} relays${ok.length ? ' (' + ok.map((u) => u.replace('wss://', '')).join(', ') + ')' : ': ' + JSON.stringify(r)}; a node that follows kind ${BLOCK_KIND} submits it`, ok.length ? '' : 'e'); }
+  catch (e) { b.status = 'publish failed'; log('publish failed: ' + e.message, 'e'); } renderFound(); ask('after a block'); });
+function renderFound() { $('blocks').innerHTML = M.found.length ? M.found.slice().reverse().map((b) => `<tr><td>${n(b.height)}</td><td class="mono" title="${b.hash}">${b.hash.slice(0, 20)}…</td><td class="mono">${fmtBtc(b.value)}</td><td class="${b.status === 'in the chain' ? 'good' : /won|failed|no relay/.test(b.status) ? 'bad' : ''}">${b.status}${b.relays ? ` (${b.relays} relays)` : ''}</td></tr>`).join('') : '<tr><td colspan="4" class="mut">none yet</td></tr>'; }
+function notify(title, body) { if (!('Notification' in window)) return; if (Notification.permission === 'granted') new Notification(`Winch · ${title}`, { body }); else if (Notification.permission === 'default') Notification.requestPermission(); }
+
+// ---- start and stop
+function start() { if (M.mining || !node.synced) return; M.mining = true; OPT.auto = true; saveOptions(); $('go').textContent = 'Stop'; startWorkers(); tn.post({ type: 'mine-solo', key: M.key, pay: M.script }); if (Notification.permission === 'default') Notification.requestPermission(); }
+function stop() { M.mining = false; OPT.auto = false; saveOptions(); M.sleeping = false; clearTimeout(M.wakeTimer); stopWorkers(); tn.post({ type: 'stop-mining' }); $('go').textContent = 'Start mining'; $('mstate').textContent = 'idle'; $('mstate2').textContent = 'stopped'; $('t-state').classList.remove('on'); $('rate').textContent = '—'; log('stopped'); }
+$('go').onclick = () => (M.mining ? stop() : start());
+
+// ---- settings
+$('settings').onclick = () => { $('o-workers').value = OPT.workers; $('o-wasm').checked = !!OPT.wasm; $('o-always').checked = !!OPT.always; $('o-reefkey').checked = !!OPT.reefKey; $('o-snapshot').value = SNAP_URL; $('o-blocks').value = BLOCKS_URL; $('o-torrent').checked = !!OPT.torrent; $('dlg').showModal(); };
+$('o-cancel').onclick = () => $('dlg').close();
+$('o-ok').onclick = () => { const was = { workers: OPT.workers, wasm: OPT.wasm, reefKey: OPT.reefKey }; OPT.workers = Math.max(1, Math.min(64, Number($('o-workers').value) || 1)); OPT.wasm = $('o-wasm').checked; OPT.always = $('o-always').checked; OPT.reefKey = $('o-reefkey').checked; OPT.torrent = $('o-torrent').checked; saveOptions(); tn.setTorrent(OPT.torrent);
+  const s = $('o-snapshot').value.trim(), b = $('o-blocks').value.trim(); const reload = (s && s !== SNAP_URL) || (b && b !== BLOCKS_URL) || was.reefKey !== OPT.reefKey; if (s) LS.set('winch:snapshot', s); if (b) LS.set('winch:blocks', b); $('dlg').close(); if (reload) { location.search = ''; return; }
+  if (M.mining && (was.workers !== OPT.workers || was.wasm !== OPT.wasm)) { startWorkers(); if (M.work && !M.sleeping) dispatch(M.work); } if (M.mining && M.sleeping && OPT.always && M.work) dispatch(M.work); };
+
+await keys().catch((e) => { log('keys: ' + e.message, 'e'); });
+try { await tn.start(); } catch (e) { $('syncmsg').textContent = 'Error: could not start the node: ' + e.message; node.error = e.message; pill(); }

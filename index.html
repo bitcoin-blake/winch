@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Winch · solo mining in a tab</title>
+<meta name="description" content="Solo mining in a browser tab on txbt4, the BLAKE2b testnet4: the block is built and checked by the tab's own node from its own mempool, hashed in the tab in the twenty-minute window, and handed to the chain.">
+<meta property="og:site_name" content="Winch"><meta property="og:title" content="Winch · solo mining in a tab"><meta property="og:description" content="The block is built and checked by the tab's own node from its own mempool, hashed in the tab in testnet's twenty-minute window, and handed to the chain. BLAKE2b testnet4."><meta property="og:type" content="website"><meta property="og:url" content="https://bitcoin-blake.github.io/winch/"><meta property="og:image" content="https://bitcoin-blake.github.io/winch/og.png"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23171a2b'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%233ec28f' stroke-width='3'/%3E%3Cpath d='M16 9v-5M23 16h5' stroke='%233ec28f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root { color-scheme:dark; --bg:#0d0f1a; --panel:#161929; --panel2:#1d2135; --line:#262b42; --text:#e8eaf2; --mut:#8d92ab; --acc:#3ec28f; --amber:#f0a04b; --blue:#5b9def; --red:#e5605a; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace }
+* { box-sizing:border-box } html,body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif } a { color:var(--blue) }
+.mono, .kv .v, .big { font-family:var(--mono); font-variant-numeric:tabular-nums }
+.top { display:flex; align-items:center; gap:14px; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5 } .top .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:17.5px } .top .brand span { color:var(--mut); font-weight:400; font-size:12.5px } .top .fill { flex:1 }
+.pill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); font-size:12.5px; white-space:nowrap } .pill i { width:8px; height:8px; border-radius:50%; background:var(--mut) } .pill i.sync { background:var(--amber); box-shadow:0 0 8px var(--amber); animation:tp 1.2s ease-in-out infinite } .pill i.ok { background:var(--acc); box-shadow:0 0 7px var(--acc) } .pill i.bad { background:var(--red) } @keyframes tp { 0%,100% { opacity:1 } 50% { opacity:.3 } }
+.btn { padding:6px 13px; border:1px solid var(--line); border-radius:8px; background:var(--panel2); color:var(--text); font:inherit; cursor:pointer } .btn:hover { border-color:var(--mut) } .btn.p { background:var(--acc); color:#0b1a14; border-color:var(--acc); font-weight:600 } .btn:disabled { opacity:.5; cursor:default }
+main { padding:18px 18px 64px; max-width:1200px; margin:0 auto }
+h2 { font-size:11.5px; text-transform:uppercase; letter-spacing:1px; color:var(--mut); margin:0 0 12px; font-weight:650 }
+.grid { display:grid; grid-template-columns:1.2fr 1fr; gap:14px } @media (max-width:900px) { .grid { grid-template-columns:1fr } }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.28) }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:13px } .kv .l { color:var(--mut) } .kv .v { text-align:right; font-size:12.5px; word-break:break-all }
+.hero { display:flex; gap:14px; margin:0 0 14px } .tile { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px } .tile .big { font-size:26px; font-weight:700 } .tile .l { color:var(--mut); font-size:11.5px; text-transform:uppercase; letter-spacing:.6px; margin-top:2px } .tile.on { border-color:var(--acc) }
+.window { display:flex; align-items:center; gap:14px; padding:12px 14px; border-radius:10px; background:var(--panel2); margin-top:12px } .window .ring { width:54px; height:54px; border-radius:50%; background:conic-gradient(var(--acc) var(--p,0%), var(--line) 0); display:grid; place-items:center; flex:none } .window .ring b { width:42px; height:42px; border-radius:50%; background:var(--panel2); display:grid; place-items:center; font-size:11px; font-family:var(--mono) } .window .t { font-weight:600 } .window .s { color:var(--mut); font-size:12.5px }
+.mut { color:var(--mut) } .note { font-size:11.5px; color:var(--mut); line-height:1.5 } .good { color:var(--acc) } .bad { color:var(--red) }
+table { width:100%; border-collapse:collapse; font-size:12.5px } th { text-align:left; color:var(--mut); font-weight:600; font-size:11.5px; padding:6px 8px; border-bottom:1px solid var(--line) } td { padding:6px 8px; border-bottom:1px solid #20243a; white-space:nowrap }
+.log { font-family:var(--mono); font-size:11.5px; color:var(--mut); max-height:220px; overflow:auto; white-space:pre-wrap; margin-top:8px } .log .b { color:var(--text) } .log .g { color:var(--acc) } .log .e { color:var(--red) }
+input[type=text], input[type=number] { padding:6px 9px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-family:var(--mono); font-size:12px } input[type=number] { width:80px }
+.status { position:fixed; left:0; right:0; bottom:0; background:var(--panel); border-top:1px solid var(--line); padding:7px 18px; display:flex; align-items:center; gap:12px; font-size:12.5px; z-index:5 } .status .msg { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .pb { width:200px; height:8px; background:var(--bg); border:1px solid var(--line); border-radius:99px; overflow:hidden } .pb i { display:block; height:100%; background:var(--amber); width:0 } .pb[hidden] { display:none }
+dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:0; max-width:560px; width:calc(100% - 40px) } dialog::backdrop { background:rgba(8,8,16,.6) } dialog .t { padding:12px 18px; border-bottom:1px solid var(--line); font-weight:650 } dialog .b { padding:16px 18px; display:grid; gap:12px } dialog .b label { display:grid; gap:5px; font-size:12.5px; color:var(--mut) } dialog .row { display:flex; gap:8px; align-items:center; color:var(--text) } dialog .f { padding:12px 18px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px }
+</style>
+</head>
+<body>
+<div class="top"><div class="brand"><svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1e2236"/><circle cx="16" cy="16" r="7" fill="none" stroke="#3ec28f" stroke-width="3"/><path d="M16 9v-5M23 16h5" stroke="#3ec28f" stroke-width="3" stroke-linecap="round"/></svg>Winch <span>solo mining · txbt4, BLAKE2b testnet4 · a node in this tab</span></div><div class="fill"></div>
+  <span class="pill" id="pill"><i id="pilldot" class="sync"></i><span id="pilltxt">starting</span></span><button class="btn p" id="go" disabled>Start mining</button><button class="btn" id="settings" title="Settings">⚙</button></div>
+<main>
+  <div class="hero"><div class="tile" id="t-rate"><div class="big" id="rate">—</div><div class="l">hashrate · <span id="workers">0</span> workers</div></div><div class="tile" id="t-state"><div class="big" id="mstate">idle</div><div class="l" id="mstate2">press Start once the tab is up to date</div></div><div class="tile"><div class="big" id="found">0</div><div class="l">blocks found · <span id="inchain">0</span> in the chain</div></div></div>
+  <div class="grid">
+    <div class="panel"><h2>The block this tab would mine</h2><div class="kv"><span class="l">Height</span><span class="v" id="b-height">…</span><span class="l">Transactions</span><span class="v" id="b-txs">…</span><span class="l">Fees</span><span class="v" id="b-fees">…</span><span class="l">Reward to this tab</span><span class="v" id="b-value">…</span><span class="l">Difficulty bits</span><span class="v" id="b-bits">…</span><span class="l">Built at</span><span class="v" id="b-time">…</span><span class="l">On top of</span><span class="v" id="b-prev">…</span></div>
+      <div class="window"><div class="ring" id="ring"><b id="ringtxt">—</b></div><div><div class="t" id="w-t">The twenty-minute window</div><div class="s" id="w-s">Testnet's rule: twenty minutes after the last block, the next one may be mined at the lowest difficulty. This tab mines only inside that window; the rest of the time it waits, and the last block's clock is read from the tab's own chain.</div></div></div>
+      <div class="note" style="margin-top:12px">The block is built by the node worker from the tab's own chain tip and its own validated mempool, checked against every block rule it knows, and hashed here. A found block is published as a kind 23405 event; a node that follows it runs submitblock, and this tab sees the result when its own chain tip moves.</div></div>
+    <div class="panel"><h2>Rewards</h2><div class="kv"><span class="l">Pay to</span><span class="v" id="r-addr">…</span><span class="l">Key</span><span class="v" id="r-key">…</span><span class="l">Matures after</span><span class="v">6,705 blocks (about 93 days at one block per 20 min)</span></div><div class="note" style="margin-top:10px" id="r-note"></div>
+      <h2 style="margin-top:16px">Blocks found here</h2><table><thead><tr><th>Height</th><th>Hash</th><th>Reward</th><th>Status</th></tr></thead><tbody id="blocks"><tr><td colspan="4" class="mut">none yet</td></tr></tbody></table>
+      <h2 style="margin-top:16px">Log</h2><div class="log" id="log"></div></div>
+  </div>
+</main>
+<div class="status"><span class="msg" id="syncmsg">Starting…</span><span id="synceta" class="mut"></span><div class="pb" id="pb" hidden><i id="pbi"></i></div><span class="mut" id="nodeinfo"></span></div>
+<dialog id="dlg"><div class="t">Settings</div><div class="b">
+  <label>Workers (hashing threads)<input type="number" id="o-workers" min="1" max="64"></label>
+  <label class="row" style="color:var(--text)"><input type="checkbox" id="o-wasm"> hash in WebAssembly (about 40× the JavaScript loop)</label>
+  <label class="row" style="color:var(--text)"><input type="checkbox" id="o-always"> mine outside the twenty-minute window too (at full difficulty, hopeless on a CPU; for tests)</label>
+  <label class="row" style="color:var(--text)"><input type="checkbox" id="o-reefkey"> pay Reef's wallet in this browser when it has one</label>
+  <label>Snapshot URL<input type="text" id="o-snapshot"></label><label>Blocks URL (the mirror's file, without .dat)<input type="text" id="o-blocks"></label>
+  <label class="row" style="color:var(--text)"><input type="checkbox" id="o-torrent"> fetch the snapshot from the swarm (WebTorrent), the mirror as webseed</label>
+  <div class="note">Source: <a href="https://github.com/bitcoin-blake/winch" target="_blank" rel="noopener">github.com/bitcoin-blake/winch</a>. Winch, Reef and Bight share this origin's storage: one snapshot serves all three.</div>
+</div><div class="f"><button class="btn" id="o-cancel">Cancel</button><button class="btn" id="o-ok">OK</button></div></dialog>
+<script type="module" src="winch.js"></script>
+</body>
+</html>
