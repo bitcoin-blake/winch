@@ -46,6 +46,7 @@ dialog { background:var(--panel); color:var(--text); border:1px solid var(--line
 <div class="status"><span class="msg" id="syncmsg">Starting…</span><span id="synceta" class="mut"></span><div class="pb" id="pb" hidden><i id="pbi"></i></div><span class="mut" id="nodeinfo"></span></div>
 <dialog id="dlg"><div class="t">Settings</div><div class="b">
   <label>Workers (hashing threads)<input type="number" id="o-workers" min="1" max="64"></label>
+  <label>Start hashing this many seconds before the window, the block dated to the boundary (a block may be dated up to two hours ahead; 0 waits for the clock)<input type="number" id="o-early" min="0" max="600"></label>
   <label class="row" style="color:var(--text)"><input type="checkbox" id="o-wasm"> hash in WebAssembly (about 40× the JavaScript loop)</label>
   <label class="row" style="color:var(--text)"><input type="checkbox" id="o-always"> mine outside the twenty-minute window too (at full difficulty, hopeless on a CPU; for tests)</label>
   <label class="row" style="color:var(--text)"><input type="checkbox" id="o-reefkey"> pay Reef's wallet in this browser when it has one</label>
