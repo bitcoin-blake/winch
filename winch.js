@@ -3,7 +3,7 @@
 // testnet's twenty-minute window (the lowest difficulty); a found block is published as a kind 23405 event for a node that
 // follows it to submit, and the tab sees the result when its own chain tip moves. Nothing here trusts anyone's word.
 const $ = (id) => document.getElementById(id);
-const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@518fd770fde6797ba0e18c569e96b9b80085203b';
+const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@5befed46b68644185a24b00efb2aae749ffabb3d';
 const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@v0.0.27';
 const CORE = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-core.mjs', WASM = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-mine.wasm';
 const CHAIN = 'btc:testnet4-blake2b', BLOCK_KIND = 23405, MIN_BITS = '1d00ffff', WINDOW = 1200;
@@ -84,4 +84,4 @@ $('o-ok').onclick = () => { const was = { workers: OPT.workers, wasm: OPT.wasm, 
   if (M.mining && (was.workers !== OPT.workers || was.wasm !== OPT.wasm)) { startWorkers(); if (M.work && !M.sleeping) dispatch(M.work); } if (M.mining && M.sleeping && OPT.always && M.work) dispatch(M.work); };
 
 await keys().catch((e) => { log('keys: ' + e.message, 'e'); });
-try { await tn.start(); } catch (e) { $('syncmsg').textContent = 'Error: could not start the node: ' + e.message; node.error = e.message; pill(); }
+try { if (await tn.start() === false) $('syncmsg').textContent = 'idle: the node runs in another tab of this browser (Reef, Bight, Winch or Hitch); close that tab and reload here'; } catch (e) { $('syncmsg').textContent = 'Error: could not start the node: ' + e.message; node.error = e.message; pill(); }
