@@ -3,7 +3,7 @@
 // testnet's twenty-minute window (the lowest difficulty); a found block is published as a kind 23405 event for a node that
 // follows it to submit, and the tab sees the result when its own chain tip moves. Nothing here trusts anyone's word.
 const $ = (id) => document.getElementById(id);
-const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@d2ae969a3e6c48e0c139f2da3c572a6b88b3986b';
+const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@518fd770fde6797ba0e18c569e96b9b80085203b';
 const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@v0.0.27';
 const CORE = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-core.mjs', WASM = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-mine.wasm';
 const CHAIN = 'btc:testnet4-blake2b', BLOCK_KIND = 23405, MIN_BITS = '1d00ffff', WINDOW = 1200;
@@ -52,7 +52,7 @@ setInterval(() => { const t = Date.now(); M.hashes = M.hashes.filter(([at]) => t
 
 // ---- work from the node worker: the block it built; mined now if the window is open, else the tab waits for it
 tn.on('mining', (m) => { if (m.solo) log(`mining solo as ${m.pub.slice(0, 12)}…; the block pays ${M.address.slice(0, 16)}…`); });
-tn.on('work', (m) => { if (!m.solo || !M.mining) return; M.work = m; $('b-height').textContent = n(m.height); $('b-txs').textContent = n(m.txs); $('b-fees').textContent = `${n(m.fees)} sat`; $('b-value').textContent = fmtBtc(m.value); $('b-bits').textContent = `${m.bits}${m.bits === MIN_BITS ? ' (the lowest: difficulty 1)' : ''}`; $('b-time').textContent = fmtT(m.time); $('b-prev').textContent = `${n(m.height - 1)} · ${m.prevHash.slice(0, 16)}… at ${fmtT(m.prevTime)}`;
+tn.on('work', (m) => { if (!m.solo || !M.mining) return; M.work = m; $('b-height').textContent = n(m.height); $('b-txs').textContent = n(m.txs); $('b-fees').textContent = `${n(m.fees)} sat`; $('b-value').textContent = fmtBtc(m.value); $('b-bits').textContent = `${m.bits}${m.bits === MIN_BITS ? ' (the lowest: difficulty 1)' : ''}`; $('b-time').textContent = fmtT(m.time); $('b-prev').textContent = `${n(m.height - 1)} · ${m.prevHash.slice(0, 16)}… at ${fmtT(m.prevTime)}`; const tag = /2f57696e63682f/.test(m.coinbase ?? '') ? '/Winch/' : '—'; $('b-tag').textContent = tag;
   const open = m.bits === MIN_BITS || OPT.always; if (open) dispatch(m); else sleep(m); });
 function dispatch(m) { M.sleeping = false; clearTimeout(M.wakeTimer); $('mstate').textContent = 'mining'; $('t-state').classList.add('on'); const header = Array.from(m.work, (b) => b.toString(16).padStart(2, '0')).join(''), target = Array.from(m.target, (b) => b.toString(16).padStart(2, '0')).join('');
   M.workers.forEach((w, i) => w.postMessage({ type: 'job', header, target, start: i, step: M.workers.length, jobKey: m.jobKey })); log(`work: height ${n(m.height)}, ${m.txs} tx, ${n(m.fees)} sat fees, bits ${m.bits}, dated ${fmtT(m.time)}${m.time > now() ? ` (${m.time - now()} s ahead of the clock)` : ''} (${m.why})`); }
@@ -72,7 +72,7 @@ function renderFound() { $('blocks').innerHTML = M.found.length ? M.found.slice(
 function notify(title, body) { if (!('Notification' in window)) return; if (Notification.permission === 'granted') new Notification(`Winch · ${title}`, { body }); else if (Notification.permission === 'default') Notification.requestPermission(); }
 
 // ---- start and stop
-function start() { if (M.mining || !node.synced) return; M.mining = true; OPT.auto = true; saveOptions(); $('go').textContent = 'Stop'; startWorkers(); tn.post({ type: 'mine-solo', key: M.key, pay: M.script }); if (Notification.permission === 'default') Notification.requestPermission(); }
+function start() { if (M.mining || !node.synced) return; M.mining = true; OPT.auto = true; saveOptions(); $('go').textContent = 'Stop'; startWorkers(); tn.post({ type: 'mine-solo', key: M.key, pay: M.script, tag: '/Winch/' }); if (Notification.permission === 'default') Notification.requestPermission(); }
 function stop() { M.mining = false; OPT.auto = false; saveOptions(); M.sleeping = false; clearTimeout(M.wakeTimer); stopWorkers(); tn.post({ type: 'stop-mining' }); $('go').textContent = 'Start mining'; $('mstate').textContent = 'idle'; $('mstate2').textContent = 'stopped'; $('t-state').classList.remove('on'); $('rate').textContent = '—'; log('stopped'); }
 $('go').onclick = () => (M.mining ? stop() : start());
 
