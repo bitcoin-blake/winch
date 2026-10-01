@@ -3,7 +3,7 @@
 // testnet's twenty-minute window (the lowest difficulty); a found block is published as a kind 23405 event for a node that
 // follows it to submit, and the tab sees the result when its own chain tip moves. Nothing here trusts anyone's word.
 const $ = (id) => document.getElementById(id);
-const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@e2a0e1f6e3770734cf99ffab64a07e1724c7400e';
+const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@448f74a64f19d5a6edabe6b02815a2c67e79374d';
 const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@v0.0.27';
 const CORE = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-core.mjs', WASM = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-mine.wasm';
 const CHAIN = 'btc:testnet4-blake2b', BLOCK_KIND = 23405, MIN_BITS = '1d00ffff', WINDOW = 1200;
