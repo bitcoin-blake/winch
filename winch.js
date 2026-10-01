@@ -4,7 +4,7 @@
 // follows it to submit, and the tab sees the result when its own chain tip moves. Nothing here trusts anyone's word.
 const $ = (id) => document.getElementById(id);
 const NODE = 'https://cdn.jsdelivr.net/gh/bitcoin-blake/blaketestnode@c3f6a46a5ae29702df60f0bd87a8d15a8993a84f';
-const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@v0.0.27';
+const LIB = 'https://cdn.jsdelivr.net/gh/sidestr/spec@fe689e9c723f9bf43393d2dd5b6f924a701c8a18/siding/lib', CDN = 'https://cdn.jsdelivr.net/gh/bitcoin-desktop/schema@b8cbf6337c7450fe14ddc5bce00c7280059aab5d';
 const CORE = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-core.mjs', WASM = 'https://cdn.jsdelivr.net/gh/datstr/spec@8ec3c9240ec7c6de41bbb6e29e9344cf1cadbe8d/gateway/miner-mine.wasm';
 const CHAIN = 'btc:testnet4-blake2b', BLOCK_KIND = 23405, MIN_BITS = '1d00ffff', WINDOW = 1200;
 const RELAYS = ['wss://relay.primal.net', 'wss://nostr.oxtr.dev', 'wss://nos.lol', 'wss://nostr.mom'];
